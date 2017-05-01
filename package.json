@@ -8,12 +8,13 @@
   "jsnext:main": "es/index.js",
   "scripts": {
     "clean": "rimraf dist",
+    "install": "npm run clean && npm run build:commonjs",
     "lint": "eslint src/** test/**",
     "lint:fix": "npm run lint -- --fix",
     "test": "mocha -R spec --compilers js:babel-core/register ./tests/setup.js ./tests/**/*.spec.js",
     "test:cov": "istanbul cover ./node_modules/mocha/bin/_mocha -- ./tests/** --recursive --report lcov --compilers js:babel-register --require babel-polyfill",
     "codecov": "cat coverage/*/lcov.info | codecov",
-    "build:commonjs": "cross-env BABEL_ENV=commonjs babel src --out-dir lib",
+    "build:commonjs": "cross-env BABEL_ENV=commonjs babel src --out-dir lib --presets es2015,stage-1,react --plugins es6-promise,add-module-exports,lodash,transform-object-rest-spread,transform-class-properties,transform-decorators-legacy",
     "build:es": "cross-env BABEL_ENV=es babel src --out-dir es",
     "build:umd": "cross-env BABEL_ENV=commonjs NODE_ENV=development webpack src/index.js dist/react-redux-firebase.js",
     "build:umd:min": "cross-env BABEL_ENV=commonjs NODE_ENV=production webpack src/index.js dist/react-redux-firebase.min.js",
@@ -53,12 +54,6 @@
     "firebase": "3.6.5",
     "immutable": "^3.8.1",
     "jwt-decode": "^2.1.0",
-    "lodash": "^4.17.4"
-  },
-  "peerDependencies": {
-    "react": "^0.14.6 || ^15.0.0"
-  },
-  "devDependencies": {
     "babel-cli": "^6.18.0",
     "babel-core": "^6.18.2",
     "babel-eslint": "^7.1.0",
@@ -74,10 +69,16 @@
     "babel-preset-react": "^6.16.0",
     "babel-preset-stage-1": "^6.16.0",
     "babel-register": "^6.3.13",
+    "cross-env": "^1.0.7",
+    "lodash": "^4.17.4"
+  },
+  "peerDependencies": {
+    "react": "^0.14.6 || ^15.0.0"
+  },
+  "devDependencies": {
     "chai": "^3.5.0",
     "chai-as-promised": "^6.0.0",
     "codecov": "^1.0.1",
-    "cross-env": "^1.0.7",
     "docdown": "^0.7.2",
     "documentation": "^4.0.0-beta15",
     "documentation-markdown-api-theme": "^1.0.2",

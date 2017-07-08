@@ -49,7 +49,6 @@ export default (state = initialState, action = {}) => {
   let retVal
 
   switch (action.type) {
-
     case START:
       pathArr = pathToArr(path)
       retVal = (requesting !== undefined)
@@ -164,6 +163,5 @@ export default (state = initialState, action = {}) => {
 
     default:
       return state
-
   }
 }

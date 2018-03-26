@@ -1,75 +1,70 @@
 import React from 'react'
 import ReactDOM from 'react-dom'
-import AppContainer from './containers/App/App'
+import injectTapEventPlugin from 'react-tap-event-plugin'
 import createStore from './store/createStore'
+import { version } from '../package.json'
+import { env } from './config'
+import './styles/core.scss'
 
-// ========================================================
-// Store and History Instantiation
-// ========================================================
-// Create redux store and sync with react-router-redux. We have installed the
-// react-router-redux reducer under the routerKey "router" in src/routes/index.js,
-// so we need to provide a custom `selectLocationState` to inform
-// react-router-redux of its location.
-const initialState = window.___INITIAL_STATE__
+// Window Variables
+// ------------------------------------
+window.version = version
+window.env = env
+
+// Store Initialization
+// ------------------------------------
+const initialState = window.___INITIAL_STATE__ || {
+  firebase: { authError: null }
+}
 const store = createStore(initialState)
 
-// ========================================================
 // Render Setup
-// ========================================================
+// ------------------------------------
 const MOUNT_NODE = document.getElementById('root')
 
 let render = () => {
+  const App = require('./containers/App').default
   const routes = require('./routes/index').default(store)
-
-  ReactDOM.render(
-    <AppContainer
-      store={store}
-      routes={routes}
-    />,
-    MOUNT_NODE
-  )
-}
-
-// ========================================================
-// Developer Tools Setup
-// ========================================================
-if (__DEV__) {
-  if (window.devToolsExtension) {
-    // window.devToolsExtension.open()
+  // Tap Plugin for material-ui
+  try {
+    injectTapEventPlugin()
+  } catch (err) {
+    // Silence warning about placing before render seen on hot reload
   }
+
+  ReactDOM.render(<App store={store} routes={routes} />, MOUNT_NODE)
 }
 
-// This code is excluded from production bundle
+// Development Tools
+// ------------------------------------
 if (__DEV__) {
   if (module.hot) {
-    // Development render functions
     const renderApp = render
-    const renderError = (error) => {
+    const renderError = error => {
       const RedBox = require('redbox-react').default
 
       ReactDOM.render(<RedBox error={error} />, MOUNT_NODE)
     }
 
-    // Wrap render in try/catch
     render = () => {
       try {
         renderApp()
-      } catch (error) {
-        renderError(error)
+      } catch (e) {
+        console.error(e) // eslint-disable-line no-console
+        renderError(e)
       }
     }
 
     // Setup hot module replacement
-    module.hot.accept('./routes/index', () => {
-      setTimeout(() => {
+    module.hot.accept(['./containers/App', './routes/index'], () =>
+      setImmediate(() => {
         ReactDOM.unmountComponentAtNode(MOUNT_NODE)
         render()
       })
-    })
+    )
   }
 }
 
-// ========================================================
-// Go!
-// ========================================================
-render()
+// Let's Go!
+// ------------------------------------
+if (!__TEST__) render()

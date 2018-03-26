@@ -7,7 +7,7 @@ const BundleAnalyzerPlugin = require('webpack-bundle-analyzer').BundleAnalyzerPl
 
 const config = {
   module: {
-    loaders: [
+    rules: [
       { test: /\.js$/, loaders: ['babel-loader'], exclude: /node_modules/ }
     ]
   },
@@ -21,11 +21,22 @@ const config = {
       commonjs2: 'react',
       amd: 'react',
       root: 'React'
+    },
+    firebase: {
+      commonjs: 'firebase',
+      commonjs2: 'firebase',
+      amd: 'firebase',
+      root: 'Firebase'
+    },
+    'prop-types': {
+      commonjs: 'prop-types',
+      commonjs2: 'prop-types',
+      amd: 'prop-types',
+      root: 'PropTypes'
     }
   },
   plugins: [
-    new webpack.optimize.OccurrenceOrderPlugin(),
-    new webpack.optimize.DedupePlugin()
+    new webpack.optimize.ModuleConcatenationPlugin()
   ]
 }
 
@@ -44,9 +55,7 @@ if (env === 'production') {
   )
 
   if (process.env.SIZE) {
-    config.plugins.push(
-      new BundleAnalyzerPlugin()
-    )
+    config.plugins.push(new BundleAnalyzerPlugin())
   }
 }
 
@@ -55,8 +64,11 @@ config.plugins.push(
     'process.env.NODE_ENV': JSON.stringify(env)
   }),
   new webpack.BannerPlugin(
-    `${pkg.name}${env === 'production' ? '.min' : ''}.js v${pkg.version}`,
-    { raw: false, entryOnly: true }
+    {
+      banner: `${pkg.name}${env === 'production' ? '.min' : ''}.js v${pkg.version}`,
+      raw: false,
+      entryOnly: true
+    }
   )
 )
 

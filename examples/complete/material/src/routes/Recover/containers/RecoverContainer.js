@@ -1,4 +1,5 @@
-import React, { Component, PropTypes } from 'react'
+import React, { Component } from 'react'
+import PropTypes from 'prop-types'
 import { firebaseConnect } from 'react-redux-firebase'
 import Snackbar from 'material-ui/Snackbar'
 import Paper from 'material-ui/Paper'
@@ -24,7 +25,7 @@ export default class RecoverContainer extends Component {
           open: true
         })
       })
-      .catch((err) => {
+      .catch(err => {
         console.error('Error updating account', err) // eslint-disable-line no-console
         this.setState({ message: err.message || 'Error' }) // show error snackbar
         return Promise.reject(err)
@@ -38,19 +39,19 @@ export default class RecoverContainer extends Component {
 
     return verifyPasswordResetCode(code)
       .then(() => confirmPasswordReset(code, password))
-      .then((res) => {
+      .then(res => {
         this.setState({ message: 'Password Changed Successfully' })
       })
-      .catch((err) => {
+      .catch(err => {
         console.error('Error updating account', err) // eslint-disable-line no-console
         this.setState({ message: err.message }) // show error snackbar
         return Promise.reject(err)
       })
   }
 
-  render () {
+  render() {
     return (
-      <div className='flex-column-center'>
+      <div className="flex-column-center">
         <Paper style={{ marginTop: '3rem' }}>
           <EmailForm onSubmit={this.sendRecoveryEmail} />
         </Paper>

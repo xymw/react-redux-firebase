@@ -10,11 +10,9 @@
 }
 
 .submit {
-  @extend .flex-column-center;
-  width: 30%;
-  min-width: 192px;
+  @extend .flex-row-center;
+  width: 100%;
   margin-top: 1.5rem;
-  text-align: center;
 }
 
 .options {

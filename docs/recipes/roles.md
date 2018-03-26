@@ -6,13 +6,13 @@ Though there are many patterns, we are going to use the following terminology:
 
 **Role** - job function or title which defines authority level (i.e. admin or manager). A user has a role, a role as permissions.
 
-**Permissions** - approval of a mode of access (i.e. todos) . Multiple permissions can assigned to a single role.
+**Permissions** - approval of a mode of access (i.e. todos) . Multiple permissions can be assigned to a single role.
 
 ## Data Setup
 
 Add the Roles collection in Firebase. It should be a sibling of the `users` collection. For example:
 
-_Tip: you can import below JSON directly into Firebase. Alternatively you can populate it in the start of your application or when you deploy to Firebase._
+_Tip: you can import below JSON directly into Firebase. Alternatively, you can upload it in the start of your application or when you deploy to Firebase._
 
 ```js
 {
@@ -48,7 +48,7 @@ Each user should have a role parameter that correlates to a role. For example:
 
 ## Config
 
-In order for us to check our role for permissions, we will want to populate the role on profile. This will turn the role string (i.e. admin) into the object representing that role from the roles collection.
+In order for us to check our role for permissions, we will want to populate the role on a profile. This will turn the role string (i.e. admin) into the object representing that role from the roles collection.
 
 Make sure you have the following config when creating your store:
 
@@ -78,7 +78,7 @@ reactReduxFirebase(
 )
 ```
 
-**Note:** beware that the `role` parameter on each user will remain a string, and won't actually be "converted" into a object. Something that may be apparant to some developers, but not to others ;-)
+**Note:** beware that the `role` parameter on each user will remain a string, and won't be "converted" into an object. Something that may be apparent to some developers, but not to others ;-)
 
 ## Automatically assign role when user signs up
 
@@ -110,7 +110,6 @@ Here is an example of an HOC that checks to make sure the user is an admin:
 ```js
 import { get } from 'lodash';
 import { UserAuthWrapper } from 'redux-auth-wrapper';
-import { pathToJS } from 'react-redux-firebase';
 import CircularProgress from 'material-ui/CircularProgress';
 
 /**
@@ -121,24 +120,17 @@ import CircularProgress from 'material-ui/CircularProgress';
  * @return {Component} wrappedComponent
  */
 export const UserIsAdmin = UserAuthWrapper({ // eslint-disable-line new-cap
-  authSelector: ({ firebase }) => {
-    const user = pathToJS(firebase, 'profile');
-    if (user) {
-      return { ...pathToJS(firebase, 'auth'), user }; // attach profile for use in predicate
-    }
-    return pathToJS(firebase, 'auth');
-  },
-  authenticatingSelector: ({ firebase }) =>
-      (pathToJS(firebase, 'auth') === undefined)
-      || (pathToJS(firebase, 'profile') === undefined)
-      || (pathToJS(firebase, 'isInitializing') === true),
+  authSelector: ({ firebase: { profile, auth } }) => ({ auth, profile })
+  authenticatingSelector: ({ firebase: { profile, auth, isInitializing } }) =>
+    auth === undefined || profile === undefined || isInitializing === true,
   redirectAction: newLoc => (dispatch) => {
     browserHistory.replace(newLoc);
     dispatch({ type: UNAUTHED_REDIRECT });
   },
+  allowRedirectBack: false,
   failureRedirectPath: '/login',
   wrapperDisplayName: 'UserIsAdmin',
-  predicate: auth => get(auth, `user.role.name`) === 'admin',
+  predicate: auth => get(auth, `profile.role.name`) === 'admin',
   LoadingComponent: <CircularProgress mode="indeterminate" size={80} />,
 });
 ```
@@ -147,10 +139,11 @@ Here is an example of a UserHasPermission HOC that allows us to pass in a string
 
 _Tip: you can place the below HOC in `router.js` together with `UserIsNotAuthenticated` and `UserIsAuthenticated`._
 
+**redux-auth-wrapper v1**
+
 ```js
 import { get } from 'lodash';
 import { UserAuthWrapper } from 'redux-auth-wrapper';
-import { pathToJS } from 'react-redux-firebase';
 import CircularProgress from 'material-ui/CircularProgress';
 
 /**
@@ -160,27 +153,45 @@ import CircularProgress from 'material-ui/CircularProgress';
  * @param {Component} componentToWrap - Component to wrap
  * @return {Component} wrappedComponent
  */
-export const UserHasPermission = permission => UserAuthWrapper({ // eslint-disable-line new-cap
-  authSelector: ({ firebase }) => {
-    const user = pathToJS(firebase, 'profile');
-    if (user) {
-      return { ...pathToJS(firebase, 'auth'), { user } }; // attach profile for use in predicate
-    }
-    return pathToJS(firebase, 'auth');
-  },
-  authenticatingSelector: ({ firebase }) =>
-      (pathToJS(firebase, 'auth') === undefined)
-      || (pathToJS(firebase, 'profile') === undefined)
-      || (pathToJS(firebase, 'isInitializing') === true),
+export const UserHasPermission = permission => UserAuthWrapper({
+  wrapperDisplayName: 'UserHasPermission',
+  LoadingComponent: LoadingScreen,
+  allowRedirectBack: false,
+  failureRedirectPath: '/login',
+  authSelector: ({ firebase: { profile, auth } }) => ({ auth, profile })
+  authenticatingSelector: ({ firebase: { profile, auth, isInitializing } }) =>
+    auth === undefined || profile === undefined || isInitializing === true,
+  predicate: auth => get(auth, `profile.role.${permission}`, false),
   redirectAction: newLoc => (dispatch) => {
     browserHistory.replace(newLoc);
     dispatch({ type: UNAUTHED_REDIRECT });
   },
-  failureRedirectPath: '/login',
+});
+```
+
+**react-router v4 + redux-auth-wrapper v2**
+
+```javascript
+import locationHelperBuilder from 'redux-auth-wrapper/history4/locationHelper';
+import { browserHistory } from 'react-router';
+import LoadingScreen from '../components/LoadingScreen'; // change it to your custom component
+
+const locationHelper = locationHelperBuilder({});
+
+export const UserHasPermission = permission => UserAuthWrapper({
   wrapperDisplayName: 'UserHasPermission',
-  predicate: auth => get(auth, `user.role.${permission}`, false),
+  AuthenticatingComponent: LoadingScreen,
   allowRedirectBack: false,
-  LoadingComponent: <CircularProgress mode="indeterminate" size={80} />,
+  redirectPath: (state, ownProps) =>
+    locationHelper.getRedirectQueryParam(ownProps) || '/login',
+  authenticatingSelector: ({ firebase: { auth, isInitializing } }) =>
+    !auth.isLoaded || !profile.isLoaded || isInitializing === true,
+  authenticatedSelector: ({ firebase: { auth } }) =>
+    auth.isLoaded && !auth.isEmpty,
+  redirectAction: newLoc => (dispatch) => {
+    browserHistory.replace(newLoc); // or routerActions.replace
+    dispatch({ type: UNAUTHED_REDIRECT });
+  }
 });
 ```
 
@@ -191,15 +202,4 @@ The Higher Order Component above can then be applied like so:
 
 ```js
 export default UserHasPermission('todo')(SomeComponent)
-```
-
-or using es7 decorator syntax:
-
-```js
-@UserHasPermission('todos')
-export default class SomePage extends Component {
-  render() {
-    // only rendered if user has role which matches this permission
-  }
-}
 ```

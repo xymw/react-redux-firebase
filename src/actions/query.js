@@ -1,7 +1,8 @@
-import { forEach, size } from 'lodash'
+import { isArray } from 'lodash'
 import { actionTypes } from '../constants'
-import { promisesForPopulate } from '../utils/populate'
 import {
+  orderedFromSnapshot,
+  populateAndDispatch,
   applyParamsToQuery,
   getWatcherCount,
   setWatcher,
@@ -9,171 +10,181 @@ import {
   getQueryIdFromPath
 } from '../utils/query'
 
-const { START, SET, NO_VALUE, UNAUTHORIZED_ERROR, ERROR } = actionTypes
-
 /**
- * @description Watch a specific event type
+ * @description Watch a path in Firebase Real Time Database
  * @param {Object} firebase - Internal firebase object
  * @param {Function} dispatch - Action dispatch function
  * @param {Object} options - Event options object
- * @param {String} options.event - Type of event to watch for (defaults to value)
+ * @param {String} options.type - Type of event to watch for (defaults to value)
  * @param {String} options.path - Path to watch with watcher
+ * @param {Array} options.queryParams - List of parameters for the query
+ * @param {String} options.queryId - id of the query
+ * @param {Boolean} options.isQuery - id of the query
  * @param {String} options.storeAs - Location within redux to store value
  */
-export const watchEvent = (firebase, dispatch, { type, path, populates, queryParams, queryId, isQuery, storeAs }) => {
+export const watchEvent = (firebase, dispatch, options) => {
+  if (!firebase.database || typeof firebase.database !== 'function') {
+    throw new Error('Firebase database is required to create watchers')
+  }
+  const {
+    type,
+    path,
+    populates,
+    queryParams,
+    queryId,
+    isQuery,
+    storeAs
+  } = options
   const watchPath = !storeAs ? path : `${path}@${storeAs}`
-  const counter = getWatcherCount(firebase, type, watchPath, queryId)
-  queryId = queryId || getQueryIdFromPath(path)
+  const id = queryId || getQueryIdFromPath(path)
+  const counter = getWatcherCount(firebase, type, watchPath, id)
 
   if (counter > 0) {
-    if (queryId) {
-      unsetWatcher(firebase, dispatch, type, path, queryId)
+    if (id) {
+      unsetWatcher(firebase, dispatch, type, path, id)
     } else {
       return
     }
   }
 
-  setWatcher(firebase, type, watchPath, queryId)
+  setWatcher(firebase, dispatch, type, watchPath, id)
 
   if (type === 'first_child') {
-    return firebase.database()
+    return firebase
+      .database()
       .ref()
       .child(path)
       .orderByKey()
       .limitToFirst(1)
-      .once('value', snapshot => {
+      .once('value')
+      .then(snapshot => {
         if (snapshot.val() === null) {
           dispatch({
-            type: NO_VALUE,
-            timestamp: Date.now(),
-            requesting: false,
-            requested: true,
+            type: actionTypes.NO_VALUE,
             path: storeAs || path
           })
         }
         return snapshot
-      }, (err) => {
-        // TODO: Handle catching unauthorized error
-        // dispatch({
-        //   type: UNAUTHORIZED_ERROR,
-        //   payload: err
-        // })
+      })
+      .catch(err => {
         dispatch({
-          type: ERROR,
+          type: actionTypes.ERROR,
+          path: storeAs || path,
           payload: err
         })
+        return Promise.reject(err)
       })
   }
 
-  let query = firebase.database().ref().child(path)
+  let query = firebase
+    .database()
+    .ref()
+    .child(path)
 
   if (isQuery) {
     query = applyParamsToQuery(queryParams, query)
   }
 
-  const runQuery = (q, e, p, params) => {
-    dispatch({
-      type: START,
-      timestamp: Date.now(),
-      requesting: true,
-      requested: false,
-      path: storeAs || path
-    })
+  dispatch({ type: actionTypes.START, path: storeAs || path })
 
-    // Handle once queries
-    if (e === 'once') {
-      return q.once('value')
-        .then(snapshot => {
-          if (snapshot.val() !== null) {
-            dispatch({
-              type: SET,
-              path: storeAs || path,
-              data: snapshot.val()
-            })
-          }
-          return snapshot
-        }, (err) => {
-          dispatch({
-            type: UNAUTHORIZED_ERROR,
-            payload: err
+  // Handle once queries
+  if (type === 'once') {
+    return query
+      .once('value')
+      .then(snapshot => {
+        if (snapshot.val() === null) {
+          return dispatch({
+            type: actionTypes.NO_VALUE,
+            path: storeAs || path
           })
+        }
+        // dispatch normal event if no populates exist
+        if (!populates) {
+          // create an array for preserving order of children under ordered
+          return dispatch({
+            type: actionTypes.SET,
+            path: storeAs || path,
+            data: snapshot.val(),
+            ordered: orderedFromSnapshot(snapshot)
+          })
+        }
+        // populate and dispatch associated actions if populates exist
+        return populateAndDispatch(firebase, dispatch, {
+          path,
+          storeAs,
+          snapshot,
+          data: snapshot.val(),
+          populates
         })
-    }
-    // Handle all other queries
+      })
+      .catch(err => {
+        dispatch({
+          type: actionTypes.UNAUTHORIZED_ERROR,
+          payload: err
+        })
+        return Promise.reject(err)
+      })
+  }
+  // Handle all other queries
 
-    /* istanbul ignore next: is run by tests but doesn't show in coverage */
-    q.on(e, snapshot => {
-      let data = (e === 'child_removed') ? undefined : snapshot.val()
-      const resultPath = storeAs || (e === 'value') ? p : `${p}/${snapshot.key}`
+  /* istanbul ignore next: is run by tests but doesn't show in coverage */
+  query.on(
+    type,
+    snapshot => {
+      let data = type === 'child_removed' ? undefined : snapshot.val()
+      const resultPath =
+        storeAs || type === 'value' ? path : `${path}/${snapshot.key}`
 
       // Dispatch standard event if no populates exists
       if (!populates) {
-        const ordered = []
-        // preserve order of children under ordered
-        if (e === 'child_added') {
-          ordered.push({ key: snapshot.key, ...snapshot.val() })
-        } else {
-          snapshot.forEach((child) => {
-            ordered.push({ key: child.key, ...child.val() })
-          })
-        }
-
+        // create an array for preserving order of children under ordered
+        const ordered =
+          type === 'child_added'
+            ? [{ key: snapshot.key, value: snapshot.val() }]
+            : orderedFromSnapshot(snapshot)
         return dispatch({
-          type: SET,
+          type: actionTypes.SET,
           path: storeAs || resultPath,
-          ordered: size(ordered) ? ordered : undefined,
           data,
-          timestamp: Date.now(),
-          requesting: false,
-          requested: true
+          ordered
         })
       }
-
-      // TODO: Allow setting of unpopulated data before starting population through config
-      // TODO: Set ordered for populate queries
-      // TODO: Allow config to toggle Combining into one SET action
-      promisesForPopulate(firebase, data, populates)
-        .then((results) => {
-          // dispatch child sets first so isLoaded is only set to true for
-          // populatedDataToJS after all data is in redux (Issue #121)
-          forEach(results, (result, path) => {
-            dispatch({
-              type: SET,
-              path,
-              data: result,
-              timestamp: Date.now(),
-              requesting: false,
-              requested: true
-            })
-          })
-          dispatch({
-            type: SET,
-            path: resultPath,
-            data,
-            timestamp: Date.now(),
-            requesting: false,
-            requested: true
-          })
-        })
-    }, (err) => {
-      dispatch({
-        type: UNAUTHORIZED_ERROR,
-        payload: err
+      // populate and dispatch associated actions if populates exist
+      return populateAndDispatch(firebase, dispatch, {
+        path,
+        storeAs,
+        snapshot,
+        data: snapshot.val(),
+        populates
       })
-    })
-  }
-
-  return runQuery(query, type, path, queryParams)
+    },
+    err => {
+      dispatch({ type: actionTypes.ERROR, payload: err })
+    }
+  )
 }
 
 /**
  * @description Remove watcher from an event
  * @param {Object} firebase - Internal firebase object
- * @param {String} event - Event for which to remove the watcher
- * @param {String} path - Path of watcher to remove
+ * @param {Function} dispatch - Action dispatch function
+ * @param {Object} config - Config object
+ * @param {String} config.type - Type for which to remove the watcher (
+ * value, once, first_child etc.)
+ * @param {String} config.path - Path of watcher to remove
+ * @param {String} config.storeAs - Path which to store results within in
+ * redux store
+ * @param {String} config.queryId - Id of the query (used for idendifying)
+ * in internal watchers list
  */
-export const unWatchEvent = (firebase, dispatch, event, path, queryId = undefined) =>
-    unsetWatcher(firebase, dispatch, event, path, queryId)
+export const unWatchEvent = (
+  firebase,
+  dispatch,
+  { type, path, storeAs, queryId }
+) => {
+  const watchPath = !storeAs ? path : `${path}@${storeAs}`
+  unsetWatcher(firebase, dispatch, type, watchPath, queryId)
+}
 
 /**
  * @description Add watchers to a list of events
@@ -181,19 +192,49 @@ export const unWatchEvent = (firebase, dispatch, event, path, queryId = undefine
  * @param {Function} dispatch - Action dispatch function
  * @param {Array} events - List of events for which to add watchers
  */
-export const watchEvents = (firebase, dispatch, events) =>
-    events.forEach(event =>
-      watchEvent(firebase, dispatch, event)
-    )
+export const watchEvents = (firebase, dispatch, events) => {
+  if (!isArray(events)) {
+    throw new Error('Events config must be an Array')
+  }
+  return events.map(event => watchEvent(firebase, dispatch, event))
+}
 
 /**
  * @description Remove watchers from a list of events
  * @param {Object} firebase - Internal firebase object
+ * @param {Function} dispatch - Action dispatch function
  * @param {Array} events - List of events for which to remove watchers
  */
 export const unWatchEvents = (firebase, dispatch, events) =>
-    events.forEach(event =>
-      unWatchEvent(firebase, dispatch, event.type, event.path)
-    )
+  events.forEach(event => unWatchEvent(firebase, dispatch, event))
 
-export default { watchEvents, unWatchEvents }
+/**
+ * @description Add watchers to a list of events
+ * @param {Object} firebase - Internal firebase object
+ * @param {Function} dispatch - Action dispatch function
+ * @param {String} path - Path of ref to be removed
+ * @param {Object} [options={}] - Configuration for removal
+ * @param {Boolean} [options.dispatchAction=true] - Whether or not to dispatch
+ * REMOVE action
+ * @return {Promise} Resolves with path
+ */
+export const remove = (firebase, dispatch, path, options = {}) => {
+  const { dispatchAction = true } = options
+  const { dispatchRemoveAction } = firebase._.config
+  return firebase
+    .database()
+    .ref(path)
+    .remove()
+    .then(() => {
+      if (dispatchRemoveAction && dispatchAction) {
+        dispatch({ type: actionTypes.REMOVE, path })
+      }
+      return path
+    })
+    .catch(err => {
+      dispatch({ type: actionTypes.ERROR, payload: err })
+      return Promise.reject(err)
+    })
+}
+
+export default { watchEvents, unWatchEvents, remove }

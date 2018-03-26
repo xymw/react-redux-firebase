@@ -1,12 +1,37 @@
 {
-  "presets": ["es2015", "stage-1", "react"],
+  "presets": [
+    "react",
+    ["env", {
+      "targets": {
+        "chrome": 52,
+        "browsers": ["last 2 versions", "safari >= 7"]
+      }
+    }]
+  ],
   "plugins": [
-    "es6-promise",
-    "add-module-exports",
     "lodash",
+    "add-module-exports",
     "transform-object-rest-spread",
     "transform-object-assign",
     "transform-class-properties",
-    "transform-decorators-legacy"
-  ]
+    "transform-export-extensions"
+  ],
+  "env": {
+    "es": {
+      "comments": false,
+      "plugins": [
+      ]
+    },
+    "commonjs": {
+      "comments": false,
+      "plugins": [
+      ]
+    },
+    "test": {
+      "plugins": [
+        "transform-runtime",
+        "transform-async-to-generator"
+      ]
+    }
+  }
 }
